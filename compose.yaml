@@ -1,0 +1,75 @@
+name: rednote
+
+x-backend: &backend
+  build: ./backend
+  environment:
+    DATABASE_URL: mysql+pymysql://rednote:rednote@mysql:3306/rednote?charset=utf8mb4
+    ES_URL: http://search:9200
+    SEARCH_INDEX: rednote-notes-v1
+    SQL_REQUEST_TRACE: ${SQL_REQUEST_TRACE:-0}
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: rednote
+      MYSQL_USER: rednote
+      MYSQL_PASSWORD: rednote
+      MYSQL_ROOT_PASSWORD: local-root
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysql", "-urednote", "-prednote", "-Drednote", "-e", "SELECT 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  search:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.2.4
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    volumes:
+      - search-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9200/_cluster/health"]
+      interval: 5s
+      timeout: 4s
+      retries: 36
+
+  api:
+    <<: *backend
+    depends_on:
+      mysql:
+        condition: service_healthy
+    command: ["sh", "-ec", "alembic upgrade head && python -m app.seed && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=2)"]
+      interval: 4s
+      timeout: 4s
+      retries: 30
+
+  worker:
+    <<: *backend
+    depends_on:
+      api:
+        condition: service_healthy
+    command: ["python", "-m", "app.worker"]
+
+  web:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1/"]
+      interval: 4s
+      timeout: 4s
+      retries: 20
+
+volumes:
+  mysql-data:
+  search-data:
