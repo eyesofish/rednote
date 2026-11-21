@@ -64,26 +64,31 @@ def await_ids(http, keyword, expected, started, label):
 
 
 def wait_search_ready(http):
-    poll(
-        "index responds to a query",
-        lambda timeout: http.get("/api/search", params={"q": "启动探针"}, timeout=timeout).status_code,
-        lambda code: code == 200, time.monotonic(), budget=180,
+    def probe(timeout):
+        response = http.get("/api/search", params={"q": "启动探针"}, timeout=timeout)
+        return response.status_code, time.monotonic()
+
+    _, ready_at = poll(
+        "index responds to a query", probe, lambda result: result[0] == 200,
+        time.monotonic(), budget=180,
     )
-    return time.monotonic()
+    return ready_at
 
 
 def publish(http, title, body="一篇示例笔记。"):
     response = http.post(
         "/api/notes", data={"title": title, "body": body}, files=[("images", ("cover.png", PNG, "image/png"))],
     )
+    saved_at = time.monotonic()
     assert response.status_code == 201, response.text
-    return response.json()
+    return response.json()["id"], saved_at
 
 
 def rename(http, note, new_title):
     response = http.patch(f"/api/notes/{note}", data={"title": new_title})
+    saved_at = time.monotonic()
     assert response.status_code == 200, response.text
-    return response.json()["version"]
+    return response.json()["version"], saved_at
 
 
 @pytest.fixture
@@ -98,21 +103,19 @@ def test_chinese_ranking_and_edit(http):
     wait_search_ready(http)
     tag = uuid4().hex[:8]
     keyword, replacement = f"美团{tag}", f"字节{tag}"
-    first = publish(http, f"{keyword}一面复盘")["id"]
-    second = publish(http, "周末面试笔记", body=keyword * 12)["id"]
-    separated = publish(http, f"美食团{tag}")["id"]
-    started = time.monotonic()
-    await_ids(http, keyword, [first, second], started, f"rank notes {first}/{second}, v1")
+    first, first_saved = publish(http, f"{keyword}一面复盘")
+    second, second_saved = publish(http, "周末面试笔记", body=keyword * 12)
+    separated, decoy_saved = publish(http, f"美食团{tag}")
+    await_ids(http, keyword, [first, second], min(first_saved, second_saved), f"rank notes {first}/{second}, v1")
     # Ensure the third note was indexed before checking that noncontiguous characters do not match.
-    await_ids(http, f"美食团{tag}", [separated], started, f"index note {separated}, v1")
+    await_ids(http, f"美食团{tag}", [separated], decoy_saved, f"index note {separated}, v1")
     assert search_ids(http, keyword) == [first, second]
     assert first in search_ids(http, "团")
     assert search_ids(http, f"火山{tag}") == []
-    version = rename(http, first, replacement)
-    edited = time.monotonic()
+    version, edited = rename(http, first, replacement)
     assert http.get(f"/api/notes/{first}").json()["title"] == replacement
     await_ids(http, replacement, [first], edited, f"note {first}, v{version}")
-    assert search_ids(http, keyword) == [second]
+    await_ids(http, keyword, [second], edited, f"old keyword removed from note {first}, v{version}")
     print(worker_command("event", first, version))
 
 
@@ -121,8 +124,8 @@ def test_outage_and_historical_replay(http):
     tag = uuid4().hex[:8]
     old, middle, final = (word + tag for word in ["初稿", "中稿", "定稿"])
     victim_old, victim_edit, empty = (word + tag for word in ["公开", "撤回", "火山"])
-    victim = publish(http, victim_old)["id"]
-    await_ids(http, victim_old, [victim], time.monotonic(), f"index deletion fixture {victim}, v1")
+    victim, victim_saved = publish(http, victim_old)
+    await_ids(http, victim_old, [victim], victim_saved, f"index deletion fixture {victim}, v1")
     assert search_ids(http, empty) == []
     trace_ids = set()
     try:
@@ -135,14 +138,14 @@ def test_outage_and_historical_replay(http):
             trace_ids.add(response.headers["X-Request-ID"])
         assert len(trace_ids) == 2
         print(f"503 queries executed zero SQL statements: request IDs {sorted(trace_ids)}")
-        live = publish(http, old)["id"]
-        middle_version = rename(http, live, middle)
-        final_version = rename(http, live, final)
+        live, _ = publish(http, old)
+        middle_version, _ = rename(http, live, middle)
+        final_version, _ = rename(http, live, final)
         detail = http.get(f"/api/notes/{live}")
         assert detail.json()["title"] == final
         assert int(detail.headers["X-SQL-Statements"]) > 0  # positive control for SQL instrumentation
         assert live in [item["id"] for item in http.get("/api/notes").json()["items"]]
-        victim_edit_version = rename(http, victim, victim_edit)
+        victim_edit_version, _ = rename(http, victim, victim_edit)
         assert http.delete(f"/api/notes/{victim}").status_code == 204
         assert http.get(f"/api/notes/{victim}").status_code == 404
     finally:
@@ -182,7 +185,7 @@ def test_crash_after_index_before_acknowledgement(http):
     # Stop the normal consumer, run its delivery with an abrupt exit exactly at the ack boundary.
     compose("stop", "worker")
     try:
-        note = publish(http, title)["id"]
+        note, _ = publish(http, title)
         event = worker_command("event", note, 1)
         assert event["status"] == "pending"
         fault = (
@@ -199,8 +202,8 @@ def test_crash_after_index_before_acknowledgement(http):
         assert worker_command("projection", note)["_source"]["title"] == title
         assert worker_command("event", note, 1)["status"] == "pending"
     finally:
+        restarted = time.monotonic()
         compose("start", "worker")
-    restarted = time.monotonic()
     await_ids(http, title, [note], restarted, f"redelivery event {event['event_id']} v1")
     result = poll(
         f"acknowledge event {event['event_id']} v1",

@@ -10,6 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
+    frontend = ROOT / "frontend"
+    npm = shutil.which("npm.cmd" if os.name == "nt" else "npm")
+    if npm is None or not (frontend / "node_modules/@playwright/test/package.json").is_file():
+        raise SystemExit("Install Node.js and run npm ci in frontend/ before starting acceptance.")
+
     env = os.environ.copy()
     web_port = env.get("TEST_WEB_PORT", "18085")
     mysql_port = env.get("TEST_MYSQL_PORT", "13316")
@@ -36,12 +41,8 @@ def main():
         "CREATE DATABASE IF NOT EXISTS rednote_test CHARACTER SET utf8mb4; "
         "GRANT ALL PRIVILEGES ON rednote_test.* TO 'rednote'@'%';")
     run(sys.executable, "-m", "pytest", "-q", "-s", "tests", cwd=ROOT / "backend")
-    npm = shutil.which("npm.cmd" if os.name == "nt" else "npm")
-    if npm is None:
-        raise SystemExit("Install Node.js and npm to run browser acceptance.")
-    run(npm, "ci", cwd=ROOT / "frontend")
-    run(npm, "run", "build", cwd=ROOT / "frontend")
-    run(npm, "run", "test:e2e", cwd=ROOT / "frontend")
+    run(npm, "run", "build", cwd=frontend)
+    run(npm, "run", "test:e2e", cwd=frontend)
     print(f"\nAcceptance passed. Test community: {base_url}", flush=True)
 
 
