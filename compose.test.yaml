@@ -1,0 +1,8 @@
+# The acceptance runner exposes MySQL only inside its isolated local test project.
+services:
+  mysql:
+    ports:
+      - "127.0.0.1:${TEST_MYSQL_PORT:-13316}:3306"
+  api:
+    environment:
+      SQL_REQUEST_TRACE: "1"

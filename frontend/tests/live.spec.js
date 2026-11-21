@@ -59,13 +59,40 @@ test('两个真实会话走通发帖、权限、收藏、编辑、删除和退�
   }
 })
 
-test('从真实搜索结果打开标题命中的示例笔记', async ({ page }) => {
-  await page.goto('/')
-  await page.getByRole('searchbox').fill('美团')
-  await page.getByRole('searchbox').press('Enter')
-  const cards = page.locator('.card-link')
-  await expect(cards.first()).toContainText('美团一面复盘')
-  await expect(cards).toContainText(['美团一面复盘', '周末面试笔记'])
-  await cards.first().click()
-  await expect(page.getByRole('heading', { name: '美团一面复盘' })).toBeVisible()
+test('从真实搜索结果打开标题命中的笔记', async ({ page, request }) => {
+  const suffix = Array.from(randomUUID().slice(0, 8), digit => '春夏秋冬山海星月琴棋书画梅兰竹菊'[parseInt(digit, 16)]).join('')
+  const keyword = '笔记验收' + suffix
+  const title = keyword + '复盘'
+  const ids = []
+  await expect(await request.post('/api/sessions', {
+    data: { username: 'lune', password: 'notebook-demo' },
+  })).toBeOK()
+  try {
+    for (const fields of [
+      { title, body: '这篇只在标题里包含关键词。' },
+      { title: '周末面试笔记', body: '这篇只在正文里提到' + keyword },
+    ]) {
+      const response = await request.post('/api/notes', { multipart: { ...fields, images: file } })
+      await expect(response).toBeOK()
+      ids.push((await response.json()).id)
+    }
+    await expect.poll(async () => {
+      const result = await request.get('/api/search', { params: { q: keyword } })
+      return result.ok() ? (await result.json()).items.map(item => item.id) : []
+    }, { timeout: Number(process.env.SYNC_TIMEOUT_SECONDS || 30) * 1000, intervals: [250] }).toEqual(ids)
+
+    await page.goto('/')
+    await page.getByRole('searchbox').fill(keyword)
+    await page.getByRole('searchbox').press('Enter')
+    const cards = page.locator('.card-link')
+    await expect(cards).toHaveCount(2)
+    await expect(cards.nth(0)).toHaveAttribute('href', '/notes/' + ids[0])
+    await expect(cards.nth(1)).toHaveAttribute('href', '/notes/' + ids[1])
+    await cards.first().click()
+    await expect(page).toHaveURL(new RegExp('/notes/' + ids[0] + '$'))
+    await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
+  } finally {
+    const removed = await Promise.all(ids.map(id => request.delete('/api/notes/' + id)))
+    for (const response of removed) await expect(response).toBeOK()
+  }
 })
