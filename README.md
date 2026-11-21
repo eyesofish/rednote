@@ -22,6 +22,7 @@ Vue 3 页面通过同源 API 访问 FastAPI。MySQL 8.4 保存账号、笔记、
 
 | 你想做什么 | 入口 |
 | --- | --- |
+| 请同学制作 100 篇校园笔记 | [下载作者交接包](content/campus/downloads/campus-classmate-kit.zip) · [任务单](content/campus/BRIEF.md) |
 | 运行完整测试、复现停机和恢复 | [启动与验收手册](specs/001-note-community-search/quickstart.md) |
 | 准备面试，画出一次改名的完整路径 | [一页架构取舍](docs/architecture.md) |
 | 理解第一版的功能边界与验收标准 | [PRD](PRD.md) · [功能规格](specs/001-note-community-search/spec.md) |
