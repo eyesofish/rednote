@@ -11,6 +11,7 @@ from app import auth, notes
 from app.auth import DB
 from app.db import engine
 from app.models import User
+from app.search.router import router as search_router
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -28,6 +29,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="图文笔记社区", version="1.0")
     app.include_router(auth.router, prefix="/api")
     app.include_router(notes.router, prefix="/api")
+    app.include_router(search_router, prefix="/api")
 
     if os.getenv("SQL_REQUEST_TRACE") == "1":
         @app.middleware("http")
