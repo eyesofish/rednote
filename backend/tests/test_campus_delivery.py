@@ -1,5 +1,6 @@
 """The downloadable files must match the editable sources and be usable offline."""
 import csv
+from codecs import BOM_UTF8
 from collections import Counter
 from io import StringIO
 from pathlib import Path
@@ -12,7 +13,9 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def read_csv(archive, member):
-    return list(csv.DictReader(StringIO(archive.read(member).decode("utf-8-sig"))))
+    data = archive.read(member)
+    assert data.startswith(BOM_UTF8)
+    return list(csv.DictReader(StringIO(data.decode("utf-8-sig"))))
 
 
 def test_published_handoff_matches_sources_and_preserves_pilot(tmp_path):

@@ -32,7 +32,8 @@ def encode_csv(columns, rows):
     writer = csv.DictWriter(stream, fieldnames=columns, lineterminator="\n")
     writer.writeheader()
     writer.writerows(rows)
-    return stream.getvalue().encode("utf-8")
+    # Spreadsheet apps on Windows use the BOM to recognize Chinese UTF-8 text.
+    return stream.getvalue().encode("utf-8-sig")
 
 
 def write_zip(path, entries):
