@@ -2,7 +2,7 @@
 
 一个可以亲手做搜索故障实验的图文笔记社区。用一个账号发笔记，用另一个账号搜索和收藏。停掉 Elasticsearch 后仍可改标题、删笔记。搜索恢复后，可以重放旧编辑，检查已经删除的笔记会不会回来。
 
-[![页间首页的双列图文卡片，点击查看演示视频](docs/homepage.png)](docs/rednote-demo.mp4)
+![页间操作演示：浏览校园笔记，搜索“雨天通勤”，查看标题命中和正文命中的排序，然后尝试一个没有结果的搜索词。](docs/rednote-demo.gif)
 
 搜索“雨天通勤”，看标题命中的笔记如何排在仅正文命中的笔记前面。[下载演示视频（MP4，40 秒，中文字幕）](https://raw.githubusercontent.com/eyesofish/rednote/main/docs/rednote-demo.mp4)
 
